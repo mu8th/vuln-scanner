@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vuln Scanner — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Terminal chrome header ─────────────────────── -->
+  <header class="term-chrome">
+    <div class="term-dots">
+      <span class="term-dot" style="background:#ef4444"></span>
+      <span class="term-dot" style="background:#eab308"></span>
+      <span class="term-dot" style="background:#22c55e"></span>
+    </div>
+    <div class="term-title">vuln-scanner &nbsp;/&nbsp; static analysis report</div>
+    <div class="term-state">
+      <span class="badge"><span class="badge-dot"></span> scan complete</span>
+    </div>
+  </header>
+
+  <!-- ── Page head ──────────────────────────────────── -->
+  <div class="page-head">
+    <span class="ghost-num">03</span>
+    <div class="head-border">
+      <p class="kicker">mu8th / developer tooling</p>
+      <h1 class="page-title">Vulnerability <span class="grad">Scanner</span></h1>
+      <p class="page-sub">[ sqli &middot; xss &middot; secrets &middot; outdated deps ]</p>
+    </div>
+  </div>
+
+  <!-- ── Summary stats (count-up) ───────────────────── -->
+  <div class="stats-row">
+    <div class="glow-card stat reveal">
+      <div class="stat-value"><span class="stat-num" id="stat-total" data-count="4">4</span></div>
+      <div class="stat-label">Vulnerabilities Found</div>
+    </div>
+    <div class="glow-card stat reveal">
+      <div class="stat-value"><span class="stat-num" id="stat-avg" data-count="0" data-decimals="2">0.00</span></div>
+      <div class="stat-label">Average Severity</div>
+    </div>
+    <div class="glow-card stat reveal">
+      <div class="stat-value"><span class="stat-num" id="stat-cats" data-count="0">0</span></div>
+      <div class="stat-label">Categories Scanned</div>
+    </div>
+    <div class="glow-card stat reveal">
+      <div class="stat-value"><span class="stat-num" id="stat-high" data-count="0">0</span></div>
+      <div class="stat-label">High-Risk (Score &ge; 0.6)</div>
+    </div>
+  </div>
+
+  <!-- ── Severity legend ────────────────────────────── -->
+  <div class="legend reveal">
+    <span class="legend-item"><span class="chip chip-critical">critical</span></span>
+    <span class="legend-item"><span class="chip chip-high">high</span></span>
+    <span class="legend-item"><span class="chip chip-medium">medium</span></span>
+    <span class="legend-item"><span class="chip chip-low">low</span></span>
+  </div>
+
+  <div class="grid">
+    <!-- ── Severity breakdown chart ─────────────────── -->
+    <section class="glow-card panel reveal">
+      <div class="panel-head">
+        <span class="panel-kicker">[ breakdown ]</span>
+        <h2 class="panel-title">Severity Breakdown</h2>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="severity-chart"></canvas><div class="chart-meta" id="severity-meta">awaiting scan data&hellip;</div>
+      </div>
+    </section>
+
+    <!-- ── Trend lines chart ────────────────────────── -->
+    <section class="glow-card panel reveal">
+      <div class="panel-head">
+        <span class="panel-kicker">[ trends ]</span>
+        <h2 class="panel-title">Vulnerability Trend Lines</h2>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="trend-chart"></canvas>
+      </div>
+      <div class="chart-meta" id="trend-meta">7-day window by category</div>
+    </section>
+
+    <!-- ── Detected vulnerabilities ─────────────────── -->
+    <section class="glow-card panel reveal span-2">
+      <div class="panel-head">
+        <span class="panel-kicker">[ findings ]</span>
+        <h2 class="panel-title">Detected Vulnerabilities</h2>
+      </div>
+      <div class="table-wrap">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th class="col-id">ID</th>
+              <th>Category</th>
+              <th>Severity</th>
+              <th>Location</th>
+              <th>Remediation</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="row-empty"><td colspan="5">No results recorded.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── Scan status ──────────────────────────────── -->
+    <section class="glow-card panel reveal span-2">
+      <div class="panel-head">
+        <span class="panel-kicker">[ scans ]</span>
+        <h2 class="panel-title">Scan Status</h2>
+      </div>
+      <ul id="scans-list" class="scans-list">
+        <li class="list-empty">Awaiting scan records&hellip;</li>
+      </ul>
+    </section>
+  </div>
+
+  <footer class="foot">
+    <span class="mono">vuln-scanner</span> &middot; static analysis &amp; remediation tracker
+  </footer>
+</div>
+
+<script src="dashboard.js"></script>
+<script>
+// ── Presentation layer only (dashboard.js is untouched) ──
+document.querySelectorAll('.glow-card').forEach(card => {
+  card.addEventListener('mousemove', e => {
+    const r = card.getBoundingClientRect();
+    const x = e.clientX - r.left - r.width / 2;
+    const y = e.clientY - r.top - r.height / 2;
+    card.style.setProperty('--cursor-angle', (Math.atan2(y, x) * 180 / Math.PI) + 'deg');
+  });
+});
+
+const revealObserver = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) { entry.target.classList.add('visible'); revealObserver.unobserve(entry.target); }
+  });
+}, { threshold: 0.1 });
+document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+
+// Count-up for summary stats
+function animateTo(el, target, decimals) {
+  const dur = 1400, start = performance.now();
+  const tick = now => {
+    const p = Math.min((now - start) / dur, 1);
+    const v = target * (1 - Math.pow(1 - p, 3));
+    el.textContent = decimals ? v.toFixed(decimals) : String(Math.round(v));
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+document.querySelectorAll('.stat-num[data-count]').forEach(el => {
+  const d = parseInt(el.dataset.decimals || '0', 10);
+  const so = new IntersectionObserver(es => {
+    es.forEach(en => { if (en.isIntersecting) { animateTo(el, parseFloat(el.dataset.count) || 0, d); so.unobserve(el); } });
+  }, { threshold: 0.4 });
+  so.observe(el);
+});
+
+// Sync summary stats from the /severity_breakdown payload (dashboard.js
+// writes "Total: N | Average Severity: X.XX" into #severity-meta)
+const meta = document.getElementById('severity-meta');
+new MutationObserver(() => {
+  const m = meta.textContent.match(/Total:\s*(\d+)\s*\|\s*Average Severity:\s*([\d.]+)/);
+  if (!m) return;
+  const total = document.getElementById('stat-total');
+  const avg = document.getElementById('stat-avg');
+  if (total) { total.dataset.count = m[1]; animateTo(total, parseInt(m[1], 10), 0); }
+  if (avg) { avg.dataset.count = m[2]; animateTo(avg, parseFloat(m[2]), 2); }
+}).observe(meta, { childList: true, characterData: true, subtree: true });
+
+// Categories + high-risk counts from the same public /results endpoint
+// (presentation-layer fetch; dashboard.js keeps its own data path).
+fetch('/results')
+  .then(r => (r.ok ? r.json() : null))
+  .then(rows => {
+    if (!Array.isArray(rows) || !rows.length) return;
+    const cats = new Set(rows.map(r => r.category)).size;
+    const high = rows.filter(r => (r.severity_score ?? 0) >= 0.6).length;
+    const catsEl = document.getElementById('stat-cats');
+    const highEl = document.getElementById('stat-high');
+    if (catsEl) animateTo(catsEl, cats, 0);
+    if (highEl) animateTo(highEl, high, 0);
+  })
+  .catch(() => {});
+
+// ── Severity chip mapping (numeric score -> severity band) ──
+const CAT_LABEL = { sqli: 'SQL Injection', xss: 'XSS', secrets: 'Secrets', outdated_deps: 'Outdated Deps' };
+function severityBand(score) {
+  const s = parseFloat(score);
+  if (s >= 0.85) return 'chip-critical';
+  if (s >= 0.6) return 'chip-high';
+  if (s >= 0.35) return 'chip-medium';
+  return 'chip-low';
+}
+function decorateRow(tr) {
+  if (tr.classList.contains('row-empty') || tr.dataset.done) return;
+  const tds = tr.querySelectorAll('td');
+  tds.forEach((td, i) => {
+    const raw = td.textContent;
+    const txt = (raw === 'undefined' || raw === 'null') ? '\u2014' : raw;
+    if (i === 0) td.innerHTML = `<span class="mono cell-id">#${txt}</span>`;
+    else if (i === 1) td.innerHTML = `<span class="chip chip-cat">${CAT_LABEL[txt] || txt}</span>`;
+    else if (i === 2) td.innerHTML = `<span class="chip ${severityBand(txt)}">${txt}</span>`;
+    else if (i === 3) td.innerHTML = `<code class="loc-mono">${txt}</code>`;
+    else td.innerHTML = `<span class="remediation">${txt}</span>`;
+  });
+  tr.dataset.done = '1';
+}
+function decorateScan(li) {
+  if (li.classList.contains('list-empty') || li.dataset.done) return;
+  const m = li.textContent.match(/^(.*?)\s*\(([\d.]+)\)\s*$/);
+  li.innerHTML = m
+    ? `<code class="loc-mono">${m[1]}</code><span class="chip ${severityBand(m[2])}">${m[2]}</span>`
+    : `<code class="loc-mono">${li.textContent}</code>`;
+  li.dataset.done = '1';
+}
+
+// Watch data containers; decorate rows as dashboard.js appends them
+[
+  { el: document.querySelector('#results-table tbody'), fn: decorateRow },
+  { el: document.getElementById('scans-list'), fn: decorateScan },
+].forEach(({ el, fn }) => {
+  if (!el) return;
+  const obs = new MutationObserver(() => {
+    Array.from(el.children).forEach(node => fn(node));
+    if (el.children.length && Array.from(el.children).some(n => !n.classList.contains('row-empty') && !n.classList.contains('list-empty'))) {
+      el.querySelector('.row-empty')?.remove();
+      el.querySelector('.list-empty')?.remove();
+    }
+  });
+  obs.observe(el, { childList: true });
+});
+
+// Dark-theme Chart.js defaults so canvas charts match the design system
+if (window.Chart) {
+  Chart.defaults.color = 'rgba(255,255,255,0.55)';
+  Chart.defaults.borderColor = 'rgba(255,255,255,0.08)';
+  Chart.defaults.font.family = "'Geist Mono', monospace";
+  Chart.defaults.font.size = 11;
+}
+</script>
+</body>
+</html>
