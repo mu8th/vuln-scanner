@@ -2,6 +2,10 @@
 __pycache__/
 .env
 venv/
+.venv/
 *.db
-profiles.db
-docker-compose.yml.tmp
+.coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/

@@ -195,6 +195,12 @@ fetch('/results')
   .catch(() => {});
 
 // ── Severity chip mapping (numeric score -> severity band) ──
+// Values read from the DOM can still carry markup characters (finding
+// locations and remediation text come from scanned source), so escape
+// before wrapping them in chips or code tags.
+function escText(value) {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 const CAT_LABEL = { sqli: 'SQL Injection', xss: 'XSS', secrets: 'Secrets', outdated_deps: 'Outdated Deps' };
 function severityBand(score) {
   const s = parseFloat(score);
@@ -209,11 +215,11 @@ function decorateRow(tr) {
   tds.forEach((td, i) => {
     const raw = td.textContent;
     const txt = (raw === 'undefined' || raw === 'null') ? '\u2014' : raw;
-    if (i === 0) td.innerHTML = `<span class="mono cell-id">#${txt}</span>`;
-    else if (i === 1) td.innerHTML = `<span class="chip chip-cat">${CAT_LABEL[txt] || txt}</span>`;
-    else if (i === 2) td.innerHTML = `<span class="chip ${severityBand(txt)}">${txt}</span>`;
-    else if (i === 3) td.innerHTML = `<code class="loc-mono">${txt}</code>`;
-    else td.innerHTML = `<span class="remediation">${txt}</span>`;
+    if (i === 0) td.innerHTML = `<span class="mono cell-id">#${escText(txt)}</span>`;
+    else if (i === 1) td.innerHTML = `<span class="chip chip-cat">${CAT_LABEL[txt] || escText(txt)}</span>`;
+    else if (i === 2) td.innerHTML = `<span class="chip ${severityBand(txt)}">${escText(txt)}</span>`;
+    else if (i === 3) td.innerHTML = `<code class="loc-mono">${escText(txt)}</code>`;
+    else td.innerHTML = `<span class="remediation">${escText(txt)}</span>`;
   });
   tr.dataset.done = '1';
 }
@@ -221,8 +227,8 @@ function decorateScan(li) {
   if (li.classList.contains('list-empty') || li.dataset.done) return;
   const m = li.textContent.match(/^(.*?)\s*\(([\d.]+)\)\s*$/);
   li.innerHTML = m
-    ? `<code class="loc-mono">${m[1]}</code><span class="chip ${severityBand(m[2])}">${m[2]}</span>`
-    : `<code class="loc-mono">${li.textContent}</code>`;
+    ? `<code class="loc-mono">${escText(m[1])}</code><span class="chip ${severityBand(m[2])}">${m[2]}</span>`
+    : `<code class="loc-mono">${escText(li.textContent)}</code>`;
   li.dataset.done = '1';
 }
 

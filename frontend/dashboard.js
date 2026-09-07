@@ -2,6 +2,17 @@
 
 const app = document.getElementById('app');
 
+// Escape server-supplied values before they touch innerHTML. Findings can
+// carry raw source lines from whatever repo was scanned, so the dashboard
+// must treat them as text, not markup.
+function esc(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
 
 async function load_severity_breakdown() {
     const response = await fetch('/severity_breakdown');
@@ -67,7 +78,7 @@ async function load_results() {
 
     data.forEach(result => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${result.id}</td><td>${result.category}</td><td>${result.severity_score.toFixed(2)}</td><td>${result.location}</td><td>${result.remediation_suggestion || 'N/A'}</td>`;
+        tr.innerHTML = `<td>${esc(result.id)}</td><td>${esc(result.category)}</td><td>${esc(result.severity_score.toFixed(2))}</td><td>${esc(result.location)}</td><td>${esc(result.remediation_suggestion || 'N/A')}</td>`;
         tbody.appendChild(tr);
     });
 }
@@ -83,6 +94,8 @@ async function load_scans() {
     if (data.length > 0) {
         data.forEach(scan => {
             const li = document.createElement('li');
+            // textContent keeps the path as plain text; decorateScan (in
+            // index.html) re-wraps it with escaped markup.
             li.textContent = `${scan.target_path} (${scan.severity_score.toFixed(2)})`;
             ul.appendChild(li);
         });

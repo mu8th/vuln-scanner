@@ -1,24 +1,26 @@
-"""SQLAlchemy database models for vuln-scanner."""  # type: ignore[valid-type]
+"""SQLAlchemy database models for vuln-scanner."""
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text
+from sqlalchemy import Column, Date, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import declarative_base
 
-Base = declarative_base()  # type: ignore[valid-type]
+Base = declarative_base()
 
 
-class Scan(Base):  # type: ignore[valid-type, misc]
-    """Represents a scan job."""
+class Scan(Base):
+    """Represents a completed scan job."""
+
     __tablename__ = "scans"
 
     id = Column(Integer, primary_key=True)
     target_path = Column(String, nullable=False)
-    status = Column(String, default="pending")
+    status = Column(String, default="completed")
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
 
 
-class Vulnerability(Base):  # type: ignore[valid-type, misc]
+class Vulnerability(Base):
     """Represents a detected vulnerability."""
+
     __tablename__ = "vulnerabilities"
 
     id = Column(Integer, primary_key=True)
@@ -28,15 +30,15 @@ class Vulnerability(Base):  # type: ignore[valid-type, misc]
     description = Column(Text, nullable=False)
     location = Column(String, nullable=False)
     remediation_suggestion = Column(Text, nullable=True)
-    fixed = Column(Integer, default=0)  # boolean flag
 
 
-class TrendRecord(Base):  # type: ignore[valid-type, misc]
-    """Tracks vulnerability counts over time."""
+class TrendRecord(Base):
+    """Tracks per-day vulnerability counts from scan history."""
+
     __tablename__ = "trend_records"
 
     id = Column(Integer, primary_key=True)
-    date = Column(DateTime, nullable=False)
+    date = Column(Date, nullable=False, unique=True)
     sqli_count = Column(Integer, default=0)
     xss_count = Column(Integer, default=0)
     secrets_count = Column(Integer, default=0)
