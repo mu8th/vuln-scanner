@@ -142,9 +142,7 @@ def _secret_value_is_placeholder(match_text: str) -> bool:
     value = match_text.split("=", 1)[1].strip().strip("'\"")
     if not value or value.lower() in {"none", "null"}:
         return True
-    if re.match(r"^(os\.|getenv|\$\{|\{|<|%)", value, re.IGNORECASE):
-        return True
-    return False
+    return re.match(r"^(os\.|getenv|\$\{|\{|<|%)", value, re.IGNORECASE) is not None
 
 
 def _scan_file(path: Path, rel_path: str, categories: list[str]) -> list[dict]:
@@ -252,8 +250,9 @@ def scan_codebase(target_path: str, categories: list[str] | None = None) -> dict
     started = time.perf_counter()
     findings: list[dict] = []
 
+    code_categories = [c for c in categories if c != "outdated_deps"]
     if target.is_file():
-        findings.extend(_scan_file(target, target.name, [c for c in categories if c != "outdated_deps"]))
+        findings.extend(_scan_file(target, target.name, code_categories))
     else:
         for root, dirs, files in os.walk(target):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
@@ -264,13 +263,16 @@ def scan_codebase(target_path: str, categories: list[str] | None = None) -> dict
                 if path.resolve() == _SELF_FILE:
                     continue
                 rel = os.path.relpath(path, target).replace(os.sep, "/")
-                findings.extend(_scan_file(path, rel, [c for c in categories if c != "outdated_deps"]))
+                findings.extend(_scan_file(path, rel, code_categories))
         if "outdated_deps" in categories:
             findings.extend(_check_dependencies(target))
 
     # Most severe first, then stable by location.
     findings.sort(key=lambda f: (-f["severity_score"], f["location"]))
-    severity = round(sum(f["severity_score"] for f in findings) / len(findings), 3) if findings else 0.0
+    if findings:
+        severity = round(sum(f["severity_score"] for f in findings) / len(findings), 3)
+    else:
+        severity = 0.0
 
     return {
         "scan_id": None,

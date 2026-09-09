@@ -28,7 +28,7 @@ def initiate_scan(req: ScanRequest) -> dict:
     try:
         result = scan_codebase(req.target_path, req.categories)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     scan_id = persist_scan(result)
     return {
         "scan_id": scan_id,

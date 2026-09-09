@@ -35,7 +35,7 @@ def _seed_first_scan() -> None:
         logger.info(
             "Seeded first scan of %s: %d finding(s)", target, result["vulnerability_count"]
         )
-    except Exception:  # noqa: BLE001 - seeding must never block startup
+    except Exception:  # seeding must never block startup
         logger.exception("First-run self-scan failed; dashboard starts empty")
 
 

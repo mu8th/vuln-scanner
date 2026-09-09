@@ -104,7 +104,8 @@ def test_scan_finds_sqli_xss_and_literal_secret(dirty_dir: Path) -> None:
 
 def test_scan_skips_env_reference_secrets(dirty_dir: Path) -> None:
     result = scan_codebase(str(dirty_dir))
-    secret_locations = [f["location"] for f in result["vulnerabilities"] if f["category"] == "secrets"]
+    vulns = result["vulnerabilities"]
+    secret_locations = [f["location"] for f in vulns if f["category"] == "secrets"]
     # `api_key = os.getenv(...)` is wiring, not a credential.
     assert all(not loc.endswith(":14") for loc in secret_locations)
     # The literal password on line 13 is still flagged.
