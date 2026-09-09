@@ -17,14 +17,14 @@ and check dependency pins         SQLite / Postgres           latest scan and th
    └──────────────────────────────────┴──────────────────────►  FastAPI + Chart.js
 ```
 
-- **Scan** — `backend/services/scanner.py` walks the target, skips VCS and
+- **Scan**: `backend/services/scanner.py` walks the target, skips VCS and
   cache directories, caps file size at 512 KB, and matches four categories of
   compiled regex patterns line by line. It also checks exact `==` pins in
   `requirements.txt` against a small offline advisory table.
-- **Persist** — every completed scan is written with its findings through
+- **Persist**: every completed scan is written with its findings through
   SQLAlchemy. The default store is a local SQLite file; set `DATABASE_URL` to
   point at Postgres instead.
-- **Visualize** — the dashboard serves the latest scan's breakdown, the finding
+- **Visualize**: the dashboard serves the latest scan's breakdown, the finding
   table, and a 7-day trend line built from real scan history (no canned data).
 
 ## Honest scope
