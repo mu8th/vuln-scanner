@@ -1,1 +1,1 @@
-"""Test suite for Vuln Scanner."""
+"""Test suite for the Vulnerability Scanner."""

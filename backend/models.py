@@ -1,4 +1,4 @@
-"""SQLAlchemy database models for vuln-scanner."""
+"""SQLAlchemy database models for the vulnerability scanner."""
 
 from sqlalchemy import Column, Date, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import declarative_base

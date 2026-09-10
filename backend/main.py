@@ -1,4 +1,4 @@
-"""FastAPI application entry point for vuln-scanner."""
+"""FastAPI application entry point for the vulnerability scanner."""
 
 import logging
 import os
@@ -17,7 +17,7 @@ from backend.routers.trend_lines import router as trend_router
 from backend.services import scanner
 from backend.services.storage import scan_count
 
-logger = logging.getLogger("vuln-scanner")
+logger = logging.getLogger("vulnerability-scanner")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -46,7 +46,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Vuln Scanner", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Vulnerability Scanner", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

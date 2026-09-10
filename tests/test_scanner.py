@@ -1,4 +1,4 @@
-"""Tests for the vuln-scanner engine, storage layer, and API."""
+"""Tests for the vulnerability scanner engine, storage layer, and API."""
 
 from pathlib import Path
 

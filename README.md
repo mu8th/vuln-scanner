@@ -1,4 +1,4 @@
-# vuln-scanner
+# Vulnerability Scanner
 
 A local, dependency-light **static vulnerability scanner**. Point it at a
 directory and it walks every scannable file, applies regex heuristics for SQL

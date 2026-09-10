@@ -1,4 +1,4 @@
-"""Static analysis engine for vuln-scanner.
+"""Static analysis engine for the vulnerability scanner.
 
 Walks a target directory, applies compiled regex heuristics to every
 scannable text file, and checks pinned dependency versions against a small

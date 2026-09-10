@@ -1,4 +1,4 @@
-"""SQLAlchemy engine and session management for vuln-scanner.
+"""SQLAlchemy engine and session management for the vulnerability scanner.
 
 The engine is created lazily so importing the scanner package never touches
 the database. The connection string comes from ``DATABASE_URL``; the default
