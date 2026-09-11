@@ -172,6 +172,10 @@ body {
 
 /* ── Grid + panels ──────────────────────────────────── */
 .grid { display: grid; gap: 1.5rem; grid-template-columns: 1fr; }
+/* Long finding text (locations, remediation) must never stretch a panel when
+   the results table fills in: min-width:0 keeps tracks at their set size and
+   the content scrolls/wraps inside .table-wrap instead. */
+.grid > * { min-width: 0; }
 @media (min-width: 768px) {
   .grid { grid-template-columns: 1fr 1fr; }
   .span-2 { grid-column: span 2; }
@@ -227,6 +231,7 @@ body {
   border-bottom: 1px solid var(--border);
   font-size: 0.82rem;
   vertical-align: middle;
+  overflow-wrap: anywhere;
 }
 #results-table tbody tr { transition: background 0.2s; }
 #results-table tbody tr:hover { background: rgba(255,255,255,0.03); }
