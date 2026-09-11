@@ -69,12 +69,32 @@ SQLI_PATTERNS: list[re.Pattern[str]] = [
 ]
 
 XSS_PATTERNS: list[re.Pattern[str]] = [
+    # Static `<script>` tags (external `src=` references or bare inline openers)
+    # are the application's own markup, not an injection sink; they are matched
+    # here only so `_is_static_script_tag` can suppress them below.
     re.compile(r"<script[^>]*>"),
     re.compile(r"eval\s*\("),
     re.compile(r"document\.write\s*\("),
     re.compile(r"innerHTML\s*="),
     re.compile(r"onclick\s*="),
 ]
+
+
+def _is_static_script_tag(line: str, match: re.Match[str]) -> bool:
+    """Return True when an XSS match is static markup, not a payload.
+
+    A script tag in HTML markup is not an injection sink: external references
+    (``src=...``) load known application code, and bare inline openers are the
+    app's own scripts. Real XSS risk lives in dynamic sinks such as
+    ``innerHTML`` assignments -- or in a script tag carried inside a string
+    literal (a payload), which is still flagged: a quote character before the
+    match marks it as data, not markup.
+    """
+    if not match.group(0).lstrip().startswith("<script"):
+        return False
+    prefix = line[: match.start()]
+    return '"' not in prefix and "'" not in prefix and "`" not in prefix
+
 
 SECRETS_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?i)password\s*=\s*[^\s]+"),
@@ -171,6 +191,8 @@ def _scan_file(path: Path, rel_path: str, categories: list[str]) -> list[dict]:
                 if category == "secrets" and _secret_value_is_placeholder(
                     match.group(0)
                 ):
+                    continue
+                if category == "xss" and _is_static_script_tag(line, match):
                     continue
                 findings.append(
                     {
