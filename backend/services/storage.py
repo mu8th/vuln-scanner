@@ -7,7 +7,7 @@ recent scan, and trend lines aggregate per-day counts from all scans.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import func, select
 
@@ -19,7 +19,7 @@ def persist_scan(result: dict) -> int:
     """Store a scan result (from ``scanner.scan_codebase``) and return its id."""
     session = get_session()
     try:
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         scan = Scan(
             target_path=result["target_path"],
             status="completed",
