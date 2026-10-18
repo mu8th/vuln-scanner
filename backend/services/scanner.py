@@ -59,13 +59,24 @@ def get_remediation_suggestion(category: str) -> str | None:
 # taint flow; see the README limitations section before treating results as a
 # substitute for Semgrep or Bandit.
 
+#: A complete SQL statement shape. On its own this is not a finding: a
+#: parameterized query contains one too. It counts only on a line that also
+#: builds the string dynamically (see ``_DYNAMIC_SQL``).
+_SQL_STATEMENT = re.compile(
+    r"(?i)\b(?:select\s+[\w*,.\s()]+?\s+from|insert\s+into|update\s+\w+\s+set"
+    r"|delete\s+from|drop\s+(?:table|database)|union\s+(?:all\s+)?select)\b"
+)
+
+#: String concatenation, %-formatting, ``.format()``, f-strings or JS template
+#: interpolation on the same line as a SQL statement.
+_DYNAMIC_SQL = re.compile(r"""["']\s*\+|\+\s*["']|["']\s*%\s*[\w(]|\.format\s*\(|\bf["']|\$\{""")
+
 SQLI_PATTERNS: list[re.Pattern[str]] = [
+    # Classic tautology payload carried in a literal: ' OR 1=1
     re.compile(r"'\s*OR\s+[0-9]+\s*=\s*[0-9]+"),
-    re.compile(
-        r"(?i)\b(union|select|insert|update|delete|drop)\b.*\b(from|into|table|database)\b"
-    ),
-    re.compile(r"\.\s*format\s*\(\s*['\"][^'\"]*\{"),
-    re.compile(r"f['\"](?:SELECT|INSERT|UPDATE|DELETE|DROP)\b", re.IGNORECASE),
+    # f-string whose SQL text interpolates a value.
+    re.compile(r"f['\"](?:SELECT|INSERT|UPDATE|DELETE|DROP)\b[^'\"]*\{", re.IGNORECASE),
+    _SQL_STATEMENT,
 ]
 
 XSS_PATTERNS: list[re.Pattern[str]] = [
@@ -75,9 +86,84 @@ XSS_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"<script[^>]*>"),
     re.compile(r"eval\s*\("),
     re.compile(r"document\.write\s*\("),
-    re.compile(r"innerHTML\s*="),
+    re.compile(r"(?:inner|outer)HTML\s*=(?!=)"),
+    re.compile(r"insertAdjacentHTML\s*\("),
     re.compile(r"onclick\s*="),
 ]
+
+#: Calls that escape or sanitize a value before it reaches an HTML sink.
+_ESCAPER = re.compile(
+    r"^\s*(?:esc\w*|escape\w*|sanitize\w*|DOMPurify\.sanitize|encodeURIComponent)\s*\(",
+    re.IGNORECASE,
+)
+
+#: File types where an unquoted assignment value is a variable reference
+#: (``password=form.password``), not a literal credential.
+_CODE_EXTENSIONS = {
+    ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx",
+    ".java", ".go", ".rb", ".php", ".cs", ".kt", ".swift", ".rs",
+}
+
+#: Prose files. Sentences such as "drop rates are bounded into..." look like
+#: SQL to a line regex; documentation is not executable, so code patterns are
+#: not applied to it.
+DOC_EXTENSIONS = {".md", ".markdown", ".rst", ".adoc", ".txt"}
+
+#: Path segments and file names that mark test code or fixtures. Findings there
+#: are kept (a leaked key in a fixture is still a leak) but ranked at half
+#: severity, because test inputs are often deliberately vulnerable.
+_TEST_DIRS = {"tests", "test", "__tests__", "fixtures", "fixture", "testdata", "spec"}
+_TEST_FILE = re.compile(r"^(?:test_.*\.py|.*_test\.(?:py|go)|.*\.(?:test|spec)\.[jt]sx?)$")
+
+_COMMENT_PREFIXES = ("#", "//", "/*", "*", "<!--", "--")
+
+
+def _is_test_path(rel_path: str) -> bool:
+    """Return True when a relative path points at test code or a fixture."""
+    parts = rel_path.replace("\\", "/").split("/")
+    return any(p.lower() in _TEST_DIRS for p in parts[:-1]) or bool(_TEST_FILE.match(parts[-1]))
+
+
+def _sqli_match(line: str) -> re.Match[str] | None:
+    """Return the first SQL injection match on a line, or None.
+
+    A bare SQL statement only counts when the same line builds it dynamically;
+    ``cursor.execute("SELECT ... WHERE id = ?", (uid,))`` is the safe form and
+    is not flagged.
+    """
+    for pattern in SQLI_PATTERNS:
+        match = pattern.search(line)
+        if not match:
+            continue
+        if pattern is _SQL_STATEMENT and not _DYNAMIC_SQL.search(line):
+            continue
+        return match
+    return None
+
+
+def _html_sink_is_safe(line: str, match: re.Match[str]) -> bool:
+    """Return True when an HTML sink receives only static or escaped content.
+
+    Covers the common safe forms: clearing an element (``el.innerHTML = ''``),
+    assigning a fixed string, a template literal with no interpolation, and a
+    template literal whose every ``${...}`` passes through an escaping call
+    such as ``esc(...)`` or ``DOMPurify.sanitize(...)``.
+    """
+    sink = match.group(0)
+    if "HTML" not in sink:
+        if sink.startswith("onclick"):
+            # An inline handler in static markup is the app's own code.
+            return "${" not in line and "+" not in line
+        return False
+    rhs = line[match.end():].strip().rstrip(";").strip()
+    if not rhs:
+        return False
+    if re.fullmatch(r"'[^']*'|\"[^\"]*\"", rhs):
+        return True
+    if rhs.startswith("`") and rhs.endswith("`") and len(rhs) >= 2:
+        expressions = re.findall(r"\$\{([^}]*)\}", rhs)
+        return all(_ESCAPER.match(expr) for expr in expressions)
+    return False
 
 
 def _is_static_script_tag(line: str, match: re.Match[str]) -> bool:
@@ -97,8 +183,9 @@ def _is_static_script_tag(line: str, match: re.Match[str]) -> bool:
 
 
 SECRETS_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"(?i)password\s*=\s*[^\s]+"),
-    re.compile(r"(?i)api[_-]?key\s*=\s*[^\s]+"),
+    # `(?![=])` keeps comparisons such as `password == attempt` out.
+    re.compile(r"(?i)password\s*=(?!=)\s*[^\s]+"),
+    re.compile(r"(?i)api[_-]?key\s*=(?!=)\s*[^\s]+"),
     re.compile(r"ghp_[A-Za-z0-9]{36,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
 ]
@@ -151,63 +238,124 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def _secret_value_is_placeholder(match_text: str) -> bool:
+def _secret_value_is_placeholder(match_text: str, suffix: str = "") -> bool:
     """Return True when a secrets match holds no literal credential.
 
     Skips empty values, None/null, and references such as ``os.getenv(...)``
-    or ``${ENV_VAR}`` so the engine does not flag environment wiring.
+    or ``${ENV_VAR}`` so the engine does not flag environment wiring. In source
+    code (``suffix`` is a code extension such as ``.py``), an unquoted value is
+    a variable or attribute reference, not a literal, and is skipped too.
     """
     if "=" not in match_text:
         return False
-    value = match_text.split("=", 1)[1].strip().strip("'\"")
+    raw = match_text.split("=", 1)[1].strip()
+    value = raw.strip("'\"")
     if not value or value.lower() in {"none", "null"}:
         return True
-    return re.match(r"^(os\.|getenv|\$\{|\{|<|%)", value, re.IGNORECASE) is not None
+    if re.match(r"^(os\.|getenv|\$\{|\{|<|%)", value, re.IGNORECASE):
+        return True
+    if suffix.lower() in _CODE_EXTENSIONS and raw[:1] not in {"'", '"', "`"}:
+        return True
+    return False
+
+
+def _match_line(line: str, category: str, suffix: str) -> re.Match[str] | None:
+    """Return the first match for one category on one line, after suppressions."""
+    if category == "sqli":
+        return _sqli_match(line)
+    patterns = {"xss": XSS_PATTERNS, "secrets": SECRETS_PATTERNS}.get(category)
+    for pattern in patterns or []:
+        match = pattern.search(line)
+        if not match:
+            continue
+        if category == "secrets" and _secret_value_is_placeholder(match.group(0), suffix):
+            continue
+        if category == "xss" and (
+            _is_static_script_tag(line, match) or _html_sink_is_safe(line, match)
+        ):
+            continue
+        return match
+    return None
+
+
+def _scan_lines(text: str, rel_path: str, categories: list[str]) -> list[dict]:
+    """Apply the selected category patterns to text. Returns findings.
+
+    Each finding carries the 1-based ``line`` plus the matched ``column`` span
+    so a UI can highlight it, and a ``context`` of ``"code"`` or ``"test"``.
+    """
+    findings: list[dict] = []
+    suffix = Path(rel_path).suffix.lower()
+    if suffix in DOC_EXTENSIONS:
+        return findings
+    in_tests = _is_test_path(rel_path)
+
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        is_comment = line.lstrip().startswith(_COMMENT_PREFIXES)
+        for category in categories:
+            if is_comment and category in {"sqli", "xss"}:
+                continue
+            match = _match_line(line, category, suffix)
+            if match is None:
+                continue
+            severity = classify_severity(category)
+            if in_tests:
+                severity = round(severity / 2, 3)
+            findings.append(
+                {
+                    "category": category,
+                    "severity_score": severity,
+                    "location": f"{rel_path}:{lineno}",
+                    "line": lineno,
+                    "column": match.start() + 1,
+                    "end_column": match.end() + 1,
+                    "context": "test" if in_tests else "code",
+                    "description": (
+                        f"Suspicious {category} pattern on line {lineno}: "
+                        f"{line.strip()[:120]}"
+                    ),
+                    "remediation_suggestion": get_remediation_suggestion(category),
+                }
+            )
+    return findings
 
 
 def _scan_file(path: Path, rel_path: str, categories: list[str]) -> list[dict]:
     """Apply the selected category patterns to one file. Returns findings."""
-    findings: list[dict] = []
     try:
         if path.stat().st_size > MAX_FILE_BYTES:
-            return findings
+            return []
         text = path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
-        return findings
+        return []
+    return _scan_lines(text, rel_path, categories)
 
-    for lineno, line in enumerate(text.splitlines(), start=1):
-        for category in categories:
-            patterns = {
-                "sqli": SQLI_PATTERNS,
-                "xss": XSS_PATTERNS,
-                "secrets": SECRETS_PATTERNS,
-            }.get(category)
-            if not patterns:
-                continue
-            for pattern in patterns:
-                match = pattern.search(line)
-                if not match:
-                    continue
-                if category == "secrets" and _secret_value_is_placeholder(
-                    match.group(0)
-                ):
-                    continue
-                if category == "xss" and _is_static_script_tag(line, match):
-                    continue
-                findings.append(
-                    {
-                        "category": category,
-                        "severity_score": classify_severity(category),
-                        "location": f"{rel_path}:{lineno}",
-                        "description": (
-                            f"Suspicious {category} pattern on line {lineno}: "
-                            f"{line.strip()[:120]}"
-                        ),
-                        "remediation_suggestion": get_remediation_suggestion(category),
-                    }
-                )
-                break  # one finding per category per line
-    return findings
+
+def scan_text(text: str, filename: str = "snippet.py", categories: list[str] | None = None) -> dict:
+    """Scan an in-memory snippet with the same rules as :func:`scan_codebase`.
+
+    ``filename`` only sets the file type (and test context) the rules assume;
+    nothing is read from or written to disk. Dependency pins are not checked.
+    Text over the 512 KB file cap is rejected with ``ValueError``.
+    """
+    if len(text.encode("utf-8")) > MAX_FILE_BYTES:
+        raise ValueError("Snippet exceeds the 512 KB scan limit")
+    if categories is None:
+        categories = list(SEVERITY_BY_CATEGORY)
+    started = time.perf_counter()
+    findings = _scan_lines(text, filename, [c for c in categories if c != "outdated_deps"])
+    findings.sort(key=lambda f: (-f["severity_score"], f["line"]))
+    severity = (
+        round(sum(f["severity_score"] for f in findings) / len(findings), 3) if findings else 0.0
+    )
+    return {
+        "scan_id": None,
+        "target_path": filename,
+        "severity_score": severity,
+        "vulnerability_count": len(findings),
+        "vulnerabilities": findings,
+        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+    }
 
 
 def _check_dependencies(root: Path) -> list[dict]:
