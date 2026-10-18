@@ -1,5 +1,8 @@
 # Vulnerability Scanner
 
+**[Try the live demo →](https://muath.online/#project-scan)** Paste a snippet and see
+which lines the rules flag, or scan a deliberately vulnerable sample app.
+
 A local, dependency-light **static vulnerability scanner**. Point it at a
 directory and it walks every scannable file, applies regex heuristics for SQL
 injection, XSS, hardcoded secrets, and outdated pinned dependencies, then
@@ -35,6 +38,21 @@ through several variables, and it can flag a pattern that turns out to be safe.
 Treat it as a fast first pass, the way you'd use `grep` for secrets, not as a
 replacement for Semgrep or Bandit. The README and code say this plainly because
 a reviewer should never have to guess at the limits.
+
+### What keeps the false-positive rate down
+
+Each rule is paired with a suppression for its most common safe look-alike:
+
+| Rule | Flagged | Not flagged |
+| --- | --- | --- |
+| SQL injection | A SQL statement built on the same line with `+`, `%`, `.format()`, an f-string or `${}` | Parameterized queries (`execute("... WHERE id = ?", (uid,))`), comments, `'Hello {}'.format(x)` |
+| XSS | `innerHTML`/`outerHTML` assignments, `insertAdjacentHTML`, `document.write`, `eval` with dynamic input | Clearing an element (`innerHTML = ''`), fixed strings, templates whose every `${}` goes through `esc()`/`escape*()`/`sanitize*()`/`DOMPurify.sanitize()` |
+| Secrets | Quoted literals assigned to `password`/`api_key`, AWS and GitHub token shapes | `==` comparisons, `os.getenv(...)`, `${VAR}`, and unquoted variable references in source code |
+
+Documentation files (`.md`, `.rst`, `.txt`, `.adoc`) are not run through the code
+rules, and findings under `tests/`, `fixtures/` or in `test_*.py` files are kept
+but ranked at half severity with `context: "test"`. `tests/test_rules.py` pins
+each of these cases.
 
 ## Requirements
 
@@ -96,6 +114,17 @@ result = scan_codebase("/path/to/repo")
 print(result["vulnerability_count"], result["severity_score"])
 for finding in result["vulnerabilities"]:
     print(finding["category"], finding["location"], finding["description"])
+```
+
+Scan an in-memory snippet with the same rules (the file name only sets the file
+type the rules assume; nothing touches disk):
+
+```python
+from backend.services.scanner import scan_text
+
+result = scan_text('el.innerHTML = "<b>" + name + "</b>";', "app.js")
+finding = result["vulnerabilities"][0]
+print(finding["line"], finding["column"], finding["end_column"])  # span to highlight
 ```
 
 ## Docker
